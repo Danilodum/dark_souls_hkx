@@ -3,8 +3,6 @@
 // are changed infrequently
 //
 
-#pragma once
-
 // Modify the following defines if you have to target a platform prior to the ones specified below.
 // Refer to MSDN for the latest info on corresponding values for different platforms.
 #ifndef WINVER				// Allow use of features specific to Windows XP or later.
@@ -29,7 +27,7 @@
 
 #include "../../pluginshare.h"
 
-#include "tinyxml.h"
+//#include "tinyxml.h"
 
 #include <string>
 #include <vector>
@@ -59,6 +57,12 @@ typedef struct xmlSkeleton_s
 
 } xmlSkeleton_t;
 
+typedef struct key_s
+{
+	RichQuat rot;
+	RichVec3 trn;
+} key_t;
+
 bool Anim_DS_Check(BYTE *fileBuffer, int bufferLen, noeRAPI_t *rapi);
 noesisModel_t *Anim_DS_Load(BYTE *fileBuffer, int bufferLen, int &numMdl, noeRAPI_t *rapi);
 bool ParseSkeleton(xmlSkeleton_t * xml, const char * filePath, noeRAPI_t *rapi);
@@ -72,3 +76,4 @@ std::vector<std::string> &Split(const std::string &s, char delim, std::vector<st
 unsigned int ExtractTrn(std::vector<std::string> & v, unsigned int i, xmlSkeleton_t * xml);
 unsigned int ExtractQuat(std::vector<std::string> & v, unsigned int i, xmlSkeleton_t * xml);
 unsigned int ExtractScl(std::vector<std::string> & v, unsigned int i, xmlSkeleton_t * xml);
+
