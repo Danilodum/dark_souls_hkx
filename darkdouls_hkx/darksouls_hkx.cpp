@@ -1,21 +1,16 @@
 
 #include "stdafx.h"
-#include "hk_core.h"
+
 #include <iostream>
 
 const char *g_pPluginName = "darksouls_hkx";
 const char *g_pPluginDesc = "HKX dark souls animation format handler, by Snaz.";
 
-hkMemoryRouter* memoryRouter;
 
 //called by Noesis to init the plugin
 bool NPAPI_InitLocal(void)
 {
-
-	memoryRouter = hkMemoryInitUtil::initDefault(hkMallocAllocator::m_defaultMallocAllocator, hkMemorySystem::FrameInfo(1024 * 1024));
-	hkBaseSystem::init(memoryRouter, errorReport);
-	
-	int th = g_nfn->NPAPI_Register("HKX dark souls anims", ".hkx");
+	int th = g_nfn->NPAPI_Register("HKX dark souls anims", ".damnhavok");
 	if (th < 0)
 	{
 		return false;
@@ -56,7 +51,9 @@ noesisModel_t *Anim_DS_Load(BYTE *fileBuffer, int bufferLen, int &numMdl, noeRAP
 	char *inFile = rapi->Noesis_GetInputName();
 	BYTE *skeletonFile = NULL;
 	xmlSkeleton_t xml;
+	xmlAnim_t xml_anim;
 	bool bparsedXml = false;
+	bool bparsedAnim = false;
 	if (inFile && inFile[0])
 	{
 		char fn[MAX_NOESIS_PATH];
@@ -66,10 +63,10 @@ noesisModel_t *Anim_DS_Load(BYTE *fileBuffer, int bufferLen, int &numMdl, noeRAP
 
 		// parsing xml
 		bparsedXml = ParseSkeleton(&xml, fn, rapi);
-
+		bparsedAnim = ParseAnim(&xml_anim, inFile, rapi);
 	}
 
-	if (!bparsedXml)
+	if (!bparsedXml || !bparsedAnim)
 	{
 		rapi->LogOutput("An error occured while parsing the skeleton xml file...");
 		return NULL;
@@ -99,110 +96,38 @@ noesisModel_t *Anim_DS_Load(BYTE *fileBuffer, int bufferLen, int &numMdl, noeRAP
 	//char* infile = rapi->Noesis_GetInputName();
 	char anim_name[MAX_NOESIS_PATH];
 	rapi->Noesis_GetLocalFileName(anim_name, inFile);
-
-	hkIstream stream(inFile);
-	hkStreamReader *reader = stream.getStreamReader();
-
-	hkVariant root;
-	hkResource *resource;
-
-	hkResult res = hkSerializeLoad(reader, root, resource);
-
-	if (!res.isSuccess())
+	std::string anim_name_t;
+	anim_name_t.append(anim_name);
+	for (int i = 0; i < 10; ++i)
 	{
-		rapi->LogOutput("bad file!\n");
-		return NULL;
+		anim_name_t.pop_back();
 	}
 
-	hkRootLevelContainer * scene = resource->getContents<hkRootLevelContainer>();
-	hkaAnimationContainer *ac = scene->findObject<hkaAnimationContainer>();
+	strcpy_s(anim_name, anim_name_t.c_str());
 
-	hkaAnimation * m_animation = ac->m_animations[0];
-	hkaAnimationBinding * m_binding = ac->m_bindings[0];
+	int FrameNumber = xml_anim.FrameNumber;
+	int TrackNumber = xml_anim.TrackNumber;
+	int FloatNumber = xml_anim.FloatNumber;
 
-	int FrameNumber = m_animation->getNumOriginalFrames();
-	int TrackNumber = m_animation->m_numberOfTransformTracks;
-	int FloatNumber = m_animation->m_numberOfFloatTracks;
+	float AnimDuration = xml_anim.AnimDuration;
+	float incrFrame = xml_anim.incFrame;
+	int numAnimKeys = xml_anim.numAnimKeys;
 
-	float AnimDuration = m_animation->m_duration;
-	hkReal incrFrame = m_animation->m_duration / (hkReal) (FrameNumber - 1);
-
-	rapi->LogOutput("no of frames: %d\n", FrameNumber);
-	rapi->LogOutput("no of ttracks: %d\n", TrackNumber);
-	rapi->LogOutput("no of ftracks: %d\n", FloatNumber);
-	rapi->LogOutput("anim duration: %f\n", AnimDuration);
-	rapi->LogOutput("incrFrame: %f\n", incrFrame);
-
-	rapi->LogOutput("%s%s", anim_name, "\n");
-
-	hkLocalArray<float> floatsOut(FloatNumber);
-	hkLocalArray<hkQsTransform> transformOut(TrackNumber);
-	floatsOut.setSize(FloatNumber);
-	transformOut.setSize(TrackNumber);
-	hkReal startTime = 0.0;
-
-	hkArray<hkInt16> tracks;
-	tracks.setSize(TrackNumber);
-	for (int i = 0; i<TrackNumber; ++i) tracks[i] = i;
-
-	hkReal time = startTime;
-
-	int numAnimKeys = FrameNumber * TrackNumber;
-
-	std::vector<key_t> AllKeys = std::vector<key_t>(numAnimKeys);
-	AllKeys.clear();
-	
-	for (int iFrame = 0; iFrame<FrameNumber; ++iFrame, time += incrFrame)
-	{
-		m_animation->samplePartialTracks(time, TrackNumber, transformOut.begin(), FloatNumber, floatsOut.begin());
-		hkaSkeletonUtils::normalizeRotations(transformOut.begin(), TrackNumber);
-
-		// assume 1-to-1 transforms
-		// loop through animated bones
-		for (int i = 0; i<TrackNumber; ++i)
-		{
-			hkQsTransform& transform = transformOut[i];
-			const hkVector4& anim_pos = transform.getTranslation();
-			const hkQuaternion& anim_rot = transform.getRotation();
-
-			// Translation 
-			float px = anim_pos.getComponent(0);
-			float py = anim_pos.getComponent(1);
-			float pz = anim_pos.getComponent(2);
-
-			// Rotation
-			float rx = anim_rot.m_vec.getComponent(0);
-			float ry = anim_rot.m_vec.getComponent(1);
-			float rz = anim_rot.m_vec.getComponent(2);
-			float rw = anim_rot.m_vec.getComponent(3);
-
-			RichQuat trot = RichQuat(rx, ry, rz, rw);
-			RichVec3 ttrn = RichVec3(px, py, pz);
-			key_t t = key_t();
-			t.rot = trot;
-			t.trn = ttrn;
-			AllKeys.push_back(t);
-		}
-	}
-	float scale = 100;
 	//convert anim keys to matrices
 	bool printed = false;
 	RichMat43 *mats = (RichMat43 *) rapi->Noesis_UnpooledAlloc(sizeof(RichMat43)*numAnimKeys);
 	for (int i = 0; i < numAnimKeys; i++)
 	{
-		RichQuat q = AllKeys[i].rot;
+		RichQuat q = xml_anim.keys[i].rot;
 		modelBone_t *bone = bones + (i % xml.numBones);
 		mats[i] = q.ToMat43(true);
-		RichVec3 scaled_trans = AllKeys[i].trn;
-		scaled_trans *= scale;
-		mats[i][3] = scaled_trans;
+		mats[i][3] = xml_anim.keys[i].trn;
 
 		mats[i][1][0] = -mats[i][1][0];
 		mats[i][2][0] = -mats[i][2][0];
 		mats[i][3][0] = -mats[i][3][0];
 		mats[i][0][1] = -mats[i][0][1];
 		mats[i][0][2] = -mats[i][0][2];
-		
 	}
 
 	int totalFrames = FrameNumber;
@@ -226,18 +151,6 @@ noesisModel_t *Anim_DS_Load(BYTE *fileBuffer, int bufferLen, int &numMdl, noeRAP
 	}
 
 	noesisModel_t * my_mdl = rapi->Noesis_AllocModelContainer(NULL, na, 1);
-	//noesisModel_t * mdl = rapi->Noesis_GetLoadedModel(0);
-	/*sharedModel_t * shared_mdl = rapi->rpgGetSharedModel(my_mdl, 0);
-
-	shared_mdl->numBones = xml.numBones;
-	shared_mdl->bones = bones;
-
-	noesisModel_t * final_mdl = rapi->Noesis_ModelFromSharedModel(shared_mdl);
-
-	//rapi->Noesis_FreeModels(my_mdl, 1);*/
-
-	//rapi->Noesis_SetModelAnims(final_mdl, /*noesisAnim_t * */na,/* int numAnims*/ 1);
-    rapi->LogOutput("reached hERE!");
 
 	return my_mdl;
 }
@@ -458,99 +371,49 @@ unsigned int ExtractScl(std::vector<std::string> & v, unsigned int i, xmlSkeleto
 	return i;
 }
 
-hkResource* hkSerializeUtilLoad(hkStreamReader* stream
-	, hkSerializeUtil::ErrorDetails* detailsOut/*=HK_NULL*/
-	, const hkClassNameRegistry* classReg/*=HK_NULL*/
-	, hkSerializeUtil::LoadOptions options/*=hkSerializeUtil::LOAD_DEFAULT*/)
+bool ParseAnim(xmlAnim_t *xml, const char * filePath, noeRAPI_t *rapi)
 {
-	__try
+	xml->keys.clear();
+
+	TiXmlDocument doc(filePath);
+	bool loadOkay = doc.LoadFile();
+
+	if (!loadOkay)
 	{
-		return hkSerializeUtil::load(stream, detailsOut, options);
-	} __except (EXCEPTION_EXECUTE_HANDLER)
-	{
-		//if (detailsOut == NULL)
-		//	detailsOut->id = hkSerializeUtil::ErrorDetails::ERRORID_LOAD_FAILED;
-		return NULL;
+		rapi->LogOutput("Exiting, opening xml animation file failed\n");
+		return false;
 	}
-}
 
-void HK_CALL errorReport(const char* msg, void* userContext)
-{
-	std::cout << msg << std::endl;
-}
+	rapi->LogOutput("Loaded xml animation file.\n");
 
-hkResult hkSerializeLoad(hkStreamReader *reader
-	, hkVariant &root
-	, hkResource *&resource)
-{
-	hkTypeInfoRegistry &defaultTypeRegistry = hkTypeInfoRegistry::getInstance();
-	hkDefaultClassNameRegistry &defaultRegistry = hkDefaultClassNameRegistry::getInstance();
+	TiXmlElement* data = doc.FirstChildElement("anim")->FirstChildElement("data");
 
-	hkBinaryPackfileReader bpkreader;
-	hkXmlPackfileReader xpkreader;
-	resource = NULL;
-	hkSerializeUtil::FormatDetails formatDetails;
-	hkSerializeUtil::detectFormat(reader, formatDetails);
-	hkBool32 isLoadable = hkSerializeUtil::isLoadable(reader);
-	if (!isLoadable && formatDetails.m_formatType != hkSerializeUtil::FORMAT_TAGFILE_XML)
+	xml->FrameNumber = atoi(data->Attribute("FrameNumber"));
+	xml->TrackNumber = atoi(data->Attribute("TrackNumber"));
+	xml->FloatNumber = std::stof(data->Attribute("FloatNumber"));
+	xml->AnimDuration = std::stof(data->Attribute("AnimDuration"));
+	xml->numAnimKeys = atoi(data->Attribute("numAnimKeys"));
+	xml->incFrame = std::stof(data->Attribute("incFrame"));
+
+	rapi->LogOutput("no of frames: %d\n", xml->FrameNumber);
+	rapi->LogOutput("no of ttracks: %d\n", xml->TrackNumber);
+	rapi->LogOutput("no of ftracks: %d\n", xml->FloatNumber);
+	rapi->LogOutput("anim duration: %f\n", xml->AnimDuration);
+	rapi->LogOutput("incrFrame: %f\n", xml->incFrame);
+	rapi->LogOutput("incrFrame: %d\n", xml->numAnimKeys);
+
+
+	TiXmlElement* key = data->FirstChildElement("key");
+	for (int i = 0; i < xml->numAnimKeys; ++i)
 	{
-		return HK_FAILURE;
-	} else
-	{
-		switch (formatDetails.m_formatType)
-		{
-		case hkSerializeUtil::FORMAT_PACKFILE_BINARY:
-		{
-			bpkreader.loadEntireFile(reader);
-			bpkreader.finishLoadedObjects(defaultTypeRegistry);
-			if (hkPackfileData* pkdata = bpkreader.getPackfileData())
-			{
-				hkArray<hkVariant>& obj = bpkreader.getLoadedObjects();
-				for (int i = 0, n = obj.getSize(); i<n; ++i)
-				{
-					hkVariant& value = obj[i];
-					if (value.m_class->hasVtable())
-						defaultTypeRegistry.finishLoadedObject(value.m_object, value.m_class->getName());
-				}
-				resource = pkdata;
-				resource->addReference();
-			}
-			root = bpkreader.getTopLevelObject();
-		}
-		break;
+		key_t animKey;
+		
+		animKey.trn = RichVec3(std::stof(key->Attribute("px")), std::stof(key->Attribute("py")), std::stof(key->Attribute("pz")));
+		animKey.rot = RichQuat(std::stof(key->Attribute("rx")), std::stof(key->Attribute("ry")), std::stof(key->Attribute("rz")), std::stof(key->Attribute("rw")));
+		xml->keys.push_back(animKey);
 
-		case hkSerializeUtil::FORMAT_PACKFILE_XML:
-		{
-			xpkreader.loadEntireFileWithRegistry(reader, &defaultRegistry);
-			if (hkPackfileData* pkdata = xpkreader.getPackfileData())
-			{
-				hkArray<hkVariant>& obj = xpkreader.getLoadedObjects();
-				for (int i = 0, n = obj.getSize(); i<n; ++i)
-				{
-					hkVariant& value = obj[i];
-					if (value.m_class->hasVtable())
-						defaultTypeRegistry.finishLoadedObject(value.m_object, value.m_class->getName());
-				}
-				resource = pkdata;
-				resource->addReference();
-				root = xpkreader.getTopLevelObject();
-			}
-		}
-		break;
-
-		case hkSerializeUtil::FORMAT_TAGFILE_BINARY:
-		case hkSerializeUtil::FORMAT_TAGFILE_XML:
-		default:
-		{
-			hkSerializeUtil::ErrorDetails detailsOut;
-			hkSerializeUtil::LoadOptions loadflags = hkSerializeUtil::LOAD_FAIL_IF_VERSIONING;
-			resource = hkSerializeUtilLoad(reader, &detailsOut, &defaultRegistry, loadflags);
-			root.m_object = resource->getContents<hkRootLevelContainer>();
-			if (root.m_object != NULL)
-				root.m_class = &((hkRootLevelContainer*) root.m_object)->staticClass();
-		}
-		break;
-		}
+		key = key->NextSiblingElement();
 	}
-	return root.m_object != NULL ? HK_SUCCESS : HK_FAILURE;
+
+	return true;
 }
