@@ -16,7 +16,7 @@ bool NPAPI_InitLocal(void)
 		return false;
 	}
 
-	g_nfn->NPAPI_PopupDebugLog(0);
+	//g_nfn->NPAPI_PopupDebugLog(0);
 
 	//set the data handlers for this format
 	g_nfn->NPAPI_SetTypeHandler_TypeCheck(th, Anim_DS_Check);
