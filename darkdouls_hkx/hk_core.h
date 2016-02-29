@@ -93,8 +93,6 @@ hkResource* hkSerializeUtilLoad(hkStreamReader* stream
 	, const hkClassNameRegistry* classReg/*=HK_NULL*/
 	, hkSerializeUtil::LoadOptions options/*=hkSerializeUtil::LOAD_DEFAULT*/);
 
-
-
 /*
 class hk_core
 {
@@ -110,100 +108,14 @@ public:
 };
 */
 
-inline void HK_CALL errorReport(const char* msg, void* userContext)
-{
-	//cout << msg << endl;
-}
+void HK_CALL errorReport(const char* msg, void* userContext);
 
 
-inline hkResult hkSerializeLoad(hkStreamReader *reader
+hkResult hkSerializeLoad(hkStreamReader *reader
 	, hkVariant &root
-	, hkResource *&resource)
-{
-	hkTypeInfoRegistry &defaultTypeRegistry = hkTypeInfoRegistry::getInstance();
-	hkDefaultClassNameRegistry &defaultRegistry = hkDefaultClassNameRegistry::getInstance();
+	, hkResource *&resource);
 
-	hkBinaryPackfileReader bpkreader;
-	hkXmlPackfileReader xpkreader;
-	resource = NULL;
-	hkSerializeUtil::FormatDetails formatDetails;
-	hkSerializeUtil::detectFormat(reader, formatDetails);
-	hkBool32 isLoadable = hkSerializeUtil::isLoadable(reader);
-	if (!isLoadable && formatDetails.m_formatType != hkSerializeUtil::FORMAT_TAGFILE_XML)
-	{
-		return HK_FAILURE;
-	} else
-	{
-		switch (formatDetails.m_formatType)
-		{
-		case hkSerializeUtil::FORMAT_PACKFILE_BINARY:
-		{
-			bpkreader.loadEntireFile(reader);
-			bpkreader.finishLoadedObjects(defaultTypeRegistry);
-			if (hkPackfileData* pkdata = bpkreader.getPackfileData())
-			{
-				hkArray<hkVariant>& obj = bpkreader.getLoadedObjects();
-				for (int i = 0, n = obj.getSize(); i<n; ++i)
-				{
-					hkVariant& value = obj[i];
-					if (value.m_class->hasVtable())
-						defaultTypeRegistry.finishLoadedObject(value.m_object, value.m_class->getName());
-				}
-				resource = pkdata;
-				resource->addReference();
-			}
-			root = bpkreader.getTopLevelObject();
-		}
-		break;
-
-		case hkSerializeUtil::FORMAT_PACKFILE_XML:
-		{
-			xpkreader.loadEntireFileWithRegistry(reader, &defaultRegistry);
-			if (hkPackfileData* pkdata = xpkreader.getPackfileData())
-			{
-				hkArray<hkVariant>& obj = xpkreader.getLoadedObjects();
-				for (int i = 0, n = obj.getSize(); i<n; ++i)
-				{
-					hkVariant& value = obj[i];
-					if (value.m_class->hasVtable())
-						defaultTypeRegistry.finishLoadedObject(value.m_object, value.m_class->getName());
-				}
-				resource = pkdata;
-				resource->addReference();
-				root = xpkreader.getTopLevelObject();
-			}
-		}
-		break;
-
-		case hkSerializeUtil::FORMAT_TAGFILE_BINARY:
-		case hkSerializeUtil::FORMAT_TAGFILE_XML:
-		default:
-		{
-			hkSerializeUtil::ErrorDetails detailsOut;
-			hkSerializeUtil::LoadOptions loadflags = hkSerializeUtil::LOAD_FAIL_IF_VERSIONING;
-			resource = hkSerializeUtilLoad(reader, &detailsOut, &defaultRegistry, loadflags);
-			root.m_object = resource->getContents<hkRootLevelContainer>();
-			if (root.m_object != NULL)
-				root.m_class = &((hkRootLevelContainer*) root.m_object)->staticClass();
-		}
-		break;
-		}
-	}
-	return root.m_object != NULL ? HK_SUCCESS : HK_FAILURE;
-}
-
-inline hkResource* hkSerializeUtilLoad(hkStreamReader* stream
+hkResource* hkSerializeUtilLoad(hkStreamReader* stream
 	, hkSerializeUtil::ErrorDetails* detailsOut/*=HK_NULL*/
 	, const hkClassNameRegistry* classReg/*=HK_NULL*/
-	, hkSerializeUtil::LoadOptions options/*=hkSerializeUtil::LOAD_DEFAULT*/)
-{
-	__try
-	{
-		return hkSerializeUtil::load(stream, detailsOut, options);
-	} __except (EXCEPTION_EXECUTE_HANDLER)
-	{
-		if (detailsOut == NULL)
-			detailsOut->id = hkSerializeUtil::ErrorDetails::ERRORID_LOAD_FAILED;
-		return NULL;
-	}
-}
+	, hkSerializeUtil::LoadOptions options/*=hkSerializeUtil::LOAD_DEFAULT*/);
